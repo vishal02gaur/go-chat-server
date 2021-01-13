@@ -8,6 +8,7 @@ import (
 type User struct {
 	userHandle string
 	conn       net.Conn
+	output     chan Message
 }
 
 func (user *User) sendMessage(msg Message) {

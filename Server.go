@@ -1,6 +1,6 @@
 package main
 
 type Server struct {
-	users   map[string]User
-	message chan Message
+	users     map[string]User
+	broadcast chan Message
 }

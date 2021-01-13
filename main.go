@@ -16,8 +16,8 @@ func main() {
 	fmt.Println("server started...")
 	defer listener.Close()
 	server := &Server{
-		users:   make(map[string]User),
-		message: make(chan Message),
+		users:     make(map[string]User),
+		broadcast: make(chan Message),
 	}
 	go listen(server)
 	for {
@@ -35,10 +35,10 @@ func main() {
 func listen(server *Server) {
 	for {
 		select {
-		case msg := <-server.message:
+		case msg := <-server.broadcast:
 			go func(msg Message) {
-				for _, value := range server.users {
-					value.sendMessage(msg)
+				for _, user := range server.users {
+					user.output <- msg
 				}
 			}(msg)
 		}
@@ -53,6 +53,7 @@ func handleConnection(server *Server, conn net.Conn) {
 	user := User{
 		userHandle: userHandle,
 		conn:       conn,
+		output:     make(chan Message),
 	}
 
 	_, ok := server.users[userHandle]
@@ -62,23 +63,32 @@ func handleConnection(server *Server, conn net.Conn) {
 		return
 	}
 	server.users[userHandle] = user
-	go waitingForMessages(server, &user)
+	go readMessages(server, &user)
+	go writeMessages(server, &user)
 }
 
-func waitingForMessages(server *Server, user *User) {
-	defer delete(server.users, user.userHandle) //remove user from
+func writeMessages(server *Server, user *User) {
+	for message := range user.output {
+		user.sendMessage(message)
+	}
+}
+
+func readMessages(server *Server, user *User) {
+	defer close(user.output)
 	defer user.conn.Close()
-	sendMesageToChannel(server, user.userHandle, "Joined")
+	broadcastMessage(server, user.userHandle, "Joined")
 	scanner := bufio.NewScanner(user.conn)
 	for scanner.Scan() {
 		input := scanner.Text()
-		sendMesageToChannel(server, user.userHandle, input)
+		//TODO: handle input return some garbage string. when client terminate the connection.
+		broadcastMessage(server, user.userHandle, input)
 	}
-	sendMesageToChannel(server, user.userHandle, "Leave the chat.")
+	delete(server.users, user.userHandle) //remove user from connected users map
+	broadcastMessage(server, user.userHandle, "Leave the chat.")
 }
 
-func sendMesageToChannel(server *Server, userHandle string, msg string) {
-	server.message <- &SimpleMessage{
+func broadcastMessage(server *Server, userHandle string, msg string) {
+	server.broadcast <- &SimpleMessage{
 		userHandle: userHandle,
 		msg:        msg,
 	}
